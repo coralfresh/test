@@ -3,38 +3,50 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# Store keys and expiration in memory (for example purposes)
-valid_keys = {
-    "coralbot-S": {"expires": None, "duration_days": 3},
-    "coralbot-P": {"expires": None, "duration_days": 30}
+# Simulated key store (replace this with a real database in production)
+LICENSE_KEYS = {
+    "coralbot-S": {"expires": None, "duration_days": 7},
+    "coralbot-P": {"expires": None, "duration_days": 30},
+    "coralbot-L": {"expires": None, "duration_days": 365}
 }
 
-@app.route("/check-license", methods=["POST"])
+@app.route('/check-license', methods=['POST'])
 def check_license():
-    data = request.get_json()
-    key = data.get("license_key", "").strip()
+    try:
+        data = request.get_json()
+        key = data.get('license_key', '').strip()
 
-    if key in valid_keys:
-        info = valid_keys[key]
+        if not key:
+            return jsonify({"valid": False, "message": "License key missing."}), 400
 
-        # If it's already been activated, check expiration
-        if info["expires"]:
-            if datetime.utcnow() > info["expires"]:
-                return jsonify({"valid": False, "message": "🔒 License has expired."}), 200
-            else:
-                remaining = info["expires"] - datetime.utcnow()
-                return jsonify({"valid": True, "message": f"✅ License is valid. Time remaining: {remaining.days}d {remaining.seconds//3600}h"}), 200
-        else:
-            # First-time activation
-            expires_at = datetime.utcnow() + timedelta(days=info["duration_days"])
-            info["expires"] = expires_at
+        license_info = LICENSE_KEYS.get(key)
+
+        if not license_info:
+            return jsonify({"valid": False, "message": "Invalid license key."}), 200
+
+        # If key has never been activated
+        if license_info["expires"] is None:
+            license_info["expires"] = (datetime.utcnow() + timedelta(days=license_info["duration_days"])).isoformat()
             return jsonify({
                 "valid": True,
-                "message": f"✅ License activated. It will expire in {info['duration_days']} days."
-            }), 200
+                "message": f"✅ License activated! It will expire on {license_info['expires']}"
+            })
 
-    return jsonify({"valid": False, "message": "❌ Invalid license key."}), 200
+        # If key has already been activated
+        expires = datetime.fromisoformat(license_info["expires"])
+        if datetime.utcnow() > expires:
+            return jsonify({"valid": False, "message": "❌ License has expired."})
+        else:
+            return jsonify({
+                "valid": True,
+                "message": f"✅ License is valid until {license_info['expires']}"
+            })
 
-# 🛠 Required for Render
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    except Exception as e:
+        return jsonify({"valid": False, "message": f"Internal server error: {str(e)}"}), 500
+
+# Run the app on Render-compatible host and port
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 10000))  # Render will set PORT env variable
+    app.run(host='0.0.0.0', port=port)
