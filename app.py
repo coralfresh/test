@@ -3,48 +3,38 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# Your LICENSES dictionary should look like this
-LICENSES = {
-    "coralbot-A57JsxWqTeZP": {
-        "activated": False,
-        "activation_date": None,
-        "expiration_date": None
-    },
-    # Add more keys as needed
+# Store keys and expiration in memory (for example purposes)
+valid_keys = {
+    "coralbot-S": {"expires": None, "duration_days": 3},
+    "coralbot-P": {"expires": None, "duration_days": 30}
 }
 
-@app.route("/activate-license", methods=["POST"])
-def activate_license():
+@app.route("/check-license", methods=["POST"])
+def check_license():
     data = request.get_json()
-    license_key = data.get("license_key")
-    confirm = data.get("confirm_activation", "").lower()
+    key = data.get("license_key", "").strip()
 
-    # Key not found
-    if license_key not in LICENSES:
-        return jsonify({"valid": False, "message": "❌ Invalid license key."}), 400
+    if key in valid_keys:
+        info = valid_keys[key]
 
-    lic = LICENSES[license_key]
+        # If it's already been activated, check expiration
+        if info["expires"]:
+            if datetime.utcnow() > info["expires"]:
+                return jsonify({"valid": False, "message": "🔒 License has expired."}), 200
+            else:
+                remaining = info["expires"] - datetime.utcnow()
+                return jsonify({"valid": True, "message": f"✅ License is valid. Time remaining: {remaining.days}d {remaining.seconds//3600}h"}), 200
+        else:
+            # First-time activation
+            expires_at = datetime.utcnow() + timedelta(days=info["duration_days"])
+            info["expires"] = expires_at
+            return jsonify({
+                "valid": True,
+                "message": f"✅ License activated. It will expire in {info['duration_days']} days."
+            }), 200
 
-    if lic["activated"]:
-        # Already activated
-        return jsonify({
-            "valid": True,
-            "message": f"✅ License already activated. It will expire on {lic['expiration_date']}."
-        }), 200
+    return jsonify({"valid": False, "message": "❌ Invalid license key."}), 200
 
-    if confirm != "yes":
-        return jsonify({
-            "valid": True,
-            "message": "Activation cancelled by user. License not started yet."
-        }), 200
-
-    # Activate now
-    now = datetime.now()
-    lic["activated"] = True
-    lic["activation_date"] = now.strftime("%Y-%m-%d %H:%M:%S")
-    lic["expiration_date"] = (now + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-
-    return jsonify({
-        "valid": True,
-        "message": f"✅ License activated! It will expire on {lic['expiration_date']}."
-    }), 200
+# 🛠 Required for Render
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
